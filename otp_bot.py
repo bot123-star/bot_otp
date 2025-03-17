@@ -23,9 +23,10 @@ cursor = conn.cursor()
 # Create table if it doesn't exist
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS otp_secrets (
-    name TEXT PRIMARY KEY,
-    secret_key TEXT NOT NULL
-)
+    chat_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    secret_key TEXT NOT NULL,
+    PRIMARY KEY (chat_id, name)
 ''')
 conn.commit()
 
@@ -60,7 +61,10 @@ async def getotp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     name = context.args[0].lower()
-    cursor.execute('SELECT secret_key FROM otp_secrets WHERE name = ?', (name,))
+    chat_id = str(update.message.chat_id)
+
+    # Fetch the secret key for the given chat_id and name
+    cursor.execute('SELECT secret_key FROM otp_secrets WHERE chat_id = ? AND name = ?', (chat_id, name))
     result = cursor.fetchone()
 
     if not result:
@@ -80,6 +84,7 @@ async def addcode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     name = context.args[0].lower()
     secret_key = context.args[1].upper()  # Convert to uppercase for Base32 validation
+    chat_id = str(update.message.chat_id)
 
     # Validate the secret_key
     if not is_valid_base32(secret_key):
@@ -88,7 +93,7 @@ async def addcode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # Add the new OTP code to the database
     try:
-        cursor.execute('INSERT INTO otp_secrets (name, secret_key) VALUES (?, ?)', (name, secret_key))
+        cursor.execute('INSERT INTO otp_secrets (chat_id, name, secret_key) VALUES (?, ?, ?)', (chat_id, name, secret_key))
         conn.commit()
         await send_with_delay(update, f"OTP code for '{name}' added successfully.")
     except sqlite3.IntegrityError:
@@ -101,7 +106,10 @@ async def deletecode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     name = context.args[0].lower()
-    cursor.execute('DELETE FROM otp_secrets WHERE name = ?', (name,))
+    chat_id = str(update.message.chat_id)
+
+    # Delete the OTP code
+    cursor.execute('DELETE FROM otp_secrets WHERE chat_id = ? AND name = ?', (chat_id, name))
     conn.commit()
 
     if cursor.rowcount == 0:
@@ -111,7 +119,10 @@ async def deletecode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def listcodes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /listcodes command."""
-    cursor.execute('SELECT name FROM otp_secrets')
+    chat_id = str(update.message.chat_id)
+
+    # Fetch all OTP codes for the current chat_id
+    cursor.execute('SELECT name FROM otp_secrets WHERE chat_id = ?', (chat_id,))
     results = cursor.fetchall()
 
     if not results:
